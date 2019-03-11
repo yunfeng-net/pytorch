@@ -17,13 +17,13 @@ class BagDataset(Dataset):
         self.transform = transform
         
     def __len__(self):
-        return len(os.listdir('bag_data'))
+        return len(os.listdir('/home/yunfeng/data/Bag/bag_data'))
 
     def __getitem__(self, idx):
-        img_name = os.listdir('bag_data')[idx]
-        imgA = cv2.imread('bag_data/'+img_name)
+        img_name = os.listdir('/home/yunfeng/data/Bag/bag_data')[idx]
+        imgA = cv2.imread('/home/yunfeng/data/Bag/bag_data/'+img_name)
         imgA = cv2.resize(imgA, (160, 160))
-        imgB = cv2.imread('bag_data_msk/'+img_name, 0)
+        imgB = cv2.imread('/home/yunfeng/data/Bag/bag_data_msk/'+img_name, 0)
         imgB = cv2.resize(imgB, (160, 160))
         imgB = imgB/255
         imgB = imgB.astype('uint8')

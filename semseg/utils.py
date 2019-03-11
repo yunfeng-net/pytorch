@@ -89,7 +89,7 @@ def measure(output,label,num_class):
     miu=np.nanmean(iu)
     return output_np,label,pa,miu
 
-def train(fcn_model,test_dataloader, train_dataloader,num_class,load=None,epo_num=50):
+def train(fcn_model,test_dataloader, train_dataloader,num_class,opt):
 
     vis = visdom.Visdom()
 
@@ -100,7 +100,7 @@ def train(fcn_model,test_dataloader, train_dataloader,num_class,load=None,epo_nu
 
     fcn_model = fcn_model.to(device)
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(fcn_model.parameters(), lr=3e-3, momentum=0.7)
+    optimizer = optim.SGD(fcn_model.parameters(), lr=opt.lr, momentum=opt.momentum)
 
     all_train_iter_loss = []
     all_test_iter_loss = []
@@ -109,7 +109,7 @@ def train(fcn_model,test_dataloader, train_dataloader,num_class,load=None,epo_nu
 
     # start timing
     prev_time = datetime.now()
-    for epo in range(epo_num):
+    for epo in range(opt.e):
         
         train_loss = 0
         fcn_model.train()
@@ -171,5 +171,6 @@ def train(fcn_model,test_dataloader, train_dataloader,num_class,load=None,epo_nu
                 test_pa/N, test_miou/N, time_str))
 
         if np.mod(epo, 5) == 0:
-            torch.save(fcn_model, 'checkpoints/fcn_model_{}.pt'.format(epo))
-            print('saveing checkpoints/fcn_model_{}.pt'.format(epo))
+            s = 'checkpoints/{}_{}.pt'.format(opt.model,epo)
+            torch.save(fcn_model, s)
+            print('saveing {}'.format(s))
