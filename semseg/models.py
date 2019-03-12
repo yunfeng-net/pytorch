@@ -9,9 +9,14 @@ def Conv2d(in_channels, out_channels,kernel_size=1,padding=0):
     return nn.Sequential(*[
             nn.Conv2d(in_channels, out_channels,kernel_size,padding=padding),
             nn.BatchNorm2d(out_channels),
-            nn.PReLU()
+            nn.ReLU(inplace=True)
         ])
-
+def Conv1x1(in_channels, out_channels,kernel_size=1,padding=0):
+    return nn.Sequential(*[
+            nn.Conv2d(in_channels, out_channels,kernel_size,padding=padding),
+            #nn.BatchNorm2d(out_channels),
+            #nn.ReLU(inplace=True)
+        ])
 class SegNetX(nn.Module):
 
     def __init__(self, classes):
@@ -23,9 +28,9 @@ class SegNetX(nn.Module):
         for i in idx:
             self.feats.append(self.features[i[0]: i[1]])
         score_idx = [64, 128, 256, 512, 512]
-        self.score_feats = []
+        self.score_feats = nn.ModuleList()
         for i in score_idx:
-            self.score_feats.append(Conv2d(i, classes*2).to(torch.device('cuda')))
+            self.score_feats.append(Conv1x1(i, classes*2))
 
         self.final = Conv2d(classes*10, classes, 3, 1)
 
@@ -56,9 +61,9 @@ class PSPNetX(nn.Module):
         for i in idx:
             self.feats.append(self.features[i[0]: i[1]])
         score_idx = [64, 128, 256, 512, 512]
-        self.score_feats = []
+        self.score_feats = nn.ModuleList()
         for i in score_idx:
-            self.score_feats.append(Conv2d(i, classes*2, 2, 1).to(torch.device('cuda')))
+            self.score_feats.append(Conv1x1(i, classes*2, 2, 1))
         self.final = Conv2d(classes*10, classes, 3, 1)
 
     def forward(self, x):

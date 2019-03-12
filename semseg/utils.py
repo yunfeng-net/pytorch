@@ -95,9 +95,6 @@ def train(fcn_model,test_dataloader, train_dataloader,num_class,opt):
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    #vgg_model = VGGNet()
-    #fcn_model = FCNs(pretrained_net=vgg_model, n_class=num_class)
-
     fcn_model = fcn_model.to(device)
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(fcn_model.parameters(), lr=opt.lr, momentum=opt.momentum)
