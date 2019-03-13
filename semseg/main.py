@@ -27,9 +27,9 @@ if __name__ == "__main__":
         from VOC import test_dataloader, train_dataloader,num_class
     if opt.load:
         model = torch.load(opt.load)
-    elif opt.model=='FCN':
-        from FCN import FCNs
-        model = FCNs(num_class)
+    elif opt.model=='FCNX':
+        from models import FCNX
+        model = FCNX(num_class)
     elif opt.model=='SegNetX':
         from models import SegNetX
         model = SegNetX(num_class)

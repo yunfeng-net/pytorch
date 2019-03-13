@@ -99,10 +99,10 @@ def train(fcn_model,test_dataloader, train_dataloader,num_class,opt):
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(fcn_model.parameters(), lr=opt.lr, momentum=opt.momentum)
 
-    all_train_iter_loss = []
-    all_test_iter_loss = []
-    all_test_iter_pa = []
-    all_test_iter_miou = []
+    all_train_loss = []
+    all_test_loss = []
+    all_test_pa = []
+    all_test_miou = []
 
     # start timing
     prev_time = datetime.now()
@@ -117,14 +117,14 @@ def train(fcn_model,test_dataloader, train_dataloader,num_class,opt):
             bag_msk = bag_msk.to(device)
 
             iter_loss, _ = compute(bag, bag_msk,fcn_model,criterion, optimizer)
-            all_train_iter_loss.append(iter_loss)
             train_loss += iter_loss
 
-            if np.mod(index, 15) == 0:
+            if np.mod(index, 100) == 0:
                 print('epoch {}, {}/{},train loss is {}'.format(epo, index, len(train_dataloader), iter_loss))
-                vis.line(all_train_iter_loss, win='train_iter_loss',opts=dict(title='train iter loss'))
+        train_loss /= len(train_dataloader)
+        all_train_loss.append(train_loss)
+        vis.line(all_train_loss, win='train_loss',opts=dict(title='train loss'))
 
-   
         test_loss = 0
         test_pa = 0
         test_miou = 0
@@ -136,26 +136,19 @@ def train(fcn_model,test_dataloader, train_dataloader,num_class,opt):
                 bag_msk = bag_msk.to(device)
 
                 iter_loss, output = compute(bag, bag_msk,fcn_model,criterion)
-                all_test_iter_loss.append(iter_loss)
                 test_loss += iter_loss
                 
                 output_np,bag_msk_np,pa,miu, = measure(output,bag_msk,num_class)
 
                 test_pa += pa
-                all_test_iter_pa.append(pa)
                 test_miou += miu
-                all_test_iter_miou.append(miu)
 
-                if np.mod(index, 15) == 0:
+                if np.mod(index, 100) == 0:
                     print(r'Testing... Open http://localhost:8097/ to see test result. pixel_acc:{},mIOU:{}'.format(pa,miu))
                     output_np = restore_label(output_np)
                     bag_msk_np = restore_label(bag_msk_np)
                     vis.images(output_np[:, :, :, :], win='test_pred', opts=dict(title='test prediction')) 
                     vis.images(bag_msk_np[:, :, :, :], win='test_label', opts=dict(title='label'))
-                    vis.line(all_test_iter_loss, win='test_iter_loss', opts=dict(title='test iter loss'))
-                    vis.line(all_test_iter_pa, win='test_iter_pa', opts=dict(title='test iter PA'))
-                    vis.line(all_test_iter_miou, win='test_iter_miou', opts=dict(title='test iter mIOU'))
-
 
         cur_time = datetime.now()
         h, remainder = divmod((cur_time - prev_time).seconds, 3600)
@@ -163,11 +156,19 @@ def train(fcn_model,test_dataloader, train_dataloader,num_class,opt):
         time_str = "Time %02d:%02d:%02d" % (h, m, s)
         prev_time = cur_time
         N = len(test_dataloader)
+        test_pa /=  N
+        test_miou /= N
+        test_loss /= N
         print('epoch train loss = %f, epoch test loss = %f, pixel-acc = %f, mIOU = %f , %s'
-                %(train_loss/len(train_dataloader), test_loss/N, 
-                test_pa/N, test_miou/N, time_str))
+                %(train_loss, test_loss, test_pa, test_miou, time_str))
+        all_test_miou.append(test_miou)
+        all_test_pa.append(test_pa)
+        all_test_loss.append(test_loss)
+        vis.line(all_test_loss, win='test_loss',opts=dict(title='test loss'))
+        vis.line(all_test_pa, win='test_pa',opts=dict(title='test pa'))
+        vis.line(all_test_miou, win='test_mIOU',opts=dict(title='test mIOU'))
 
-        if np.mod(epo, 5) == 0:
-            s = 'checkpoints/{}_{}.pt'.format(opt.model,epo)
+        if np.mod(epo+1, 5) == 0:
+            s = 'checkpoints/{}_{}_{}.pt'.format(opt.model,opt.data,epo)
             torch.save(fcn_model, s)
             print('saveing {}'.format(s))

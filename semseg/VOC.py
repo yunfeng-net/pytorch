@@ -83,7 +83,7 @@ class VOCClassSegBase(data.Dataset):
         'tv/monitor',
     ])
     mean_bgr = np.array([104.00698793, 116.66876762, 122.67891434])
-    def __init__(self, root='/home/yunfeng/data/VOCdevkit/VOC2007', phase='train', transform=False):
+    def __init__(self, root='/home/yunfeng/data/VOCdevkit/VOC2012', phase='train', transform=False):
         self.root = root
         self._transform = transform
         self.flip_rate = 0
@@ -161,11 +161,11 @@ class VOCClassSegBase(data.Dataset):
         label = label.numpy()
         return img, label
 num_class = 21
-batch_size = 1    
+batch_size = 20
 train_data = VOCClassSegBase(phase='train')
 train_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=8)
 test_data = VOCClassSegBase(phase='val')
-test_dataloader = DataLoader(test_data, batch_size=1, num_workers=8)
+test_dataloader = DataLoader(test_data, batch_size=batch_size, num_workers=8)
 if __name__ == "__main__":
     sb = VOCClassSegBase(phase='train')
     for i in range(len(sb)):
