@@ -161,7 +161,7 @@ class VOCClassSegBase(data.Dataset):
         label = label.numpy()
         return img, label
 num_class = 21
-batch_size = 20
+batch_size = 5
 train_data = VOCClassSegBase(phase='train')
 train_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=8)
 test_data = VOCClassSegBase(phase='val')

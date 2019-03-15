@@ -41,9 +41,9 @@ num_class = 2
 train_size = int(0.9 * len(bag))
 test_size = len(bag) - train_size
 train_dataset, test_dataset = random_split(bag, [train_size, test_size])
-
-train_dataloader = DataLoader(train_dataset, batch_size=3, shuffle=True, num_workers=4)
-test_dataloader = DataLoader(test_dataset, batch_size=3, shuffle=True, num_workers=4)
+batch_size = 10
+train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
+test_dataloader = DataLoader(test_dataset, batch_size=batch_size, num_workers=4)
 
 
 if __name__ =='__main__':
