@@ -30,20 +30,26 @@ def main():
         batch_size=args.test_batch_size, **kwargs)
     if args.model=="vgg":
         from vgg import model
-    elif args.model=="resnet":
-        from resnet import model
+    elif args.model=="resnet" or args.model=="mobilenet" or args.model=="senet" or args.model=="densenet" or args.model=="resnext":
+        from resnet import init_model
+        model = init_model(args.model)
     elif args.model=="inception":
         from inception import model
+    elif args.model=="xception":
+        from xception import model
     if args.load:
         model = torch.load(args.load)
     model = model.to(device)
     print('# generator parameters:', sum(param.numel() for param in model.parameters()))
     #optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    prev_time = datetime.now()
     for epoch in range(1, args.epochs + 1):
         train(args, model, device, train_loader, optimizer,epoch)
         test(args, model, device, test_loader)
-
+    cur_time = datetime.now()
+    t = (cur_time - prev_time).seconds
+    print("total time: {}s".format(t))
     s = 'checkpoints/{}_{}.pt'.format(args.model,"cifar_100")
     torch.save(model, s)
         
