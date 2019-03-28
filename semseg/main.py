@@ -21,8 +21,6 @@ if __name__ == "__main__":
         from BagData import test_dataloader, train_dataloader,num_class
     elif opt.data=='CamVid':
         from CamVid import test_dataloader, train_dataloader,num_class
-    elif opt.data=='VOC2007':
-        from VOC import test_dataloader, train_dataloader,num_class
     elif opt.data=='VOC2012':
         from VOC import test_dataloader, train_dataloader,num_class
     if opt.load:
