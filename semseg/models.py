@@ -22,24 +22,63 @@ def fix_pretrain(modules):
         if isinstance(m, nn.Conv2d):
             m.requires_grad = False
 
+def get_pretrain_vgg(name):
+    if name=='16':
+        vgg = models.vgg16(pretrained=True)
+    elif name=='19':
+        vgg = models.vgg19(pretrained=True)
+    else:
+        return None
+    index = nn.ModuleList()
+    feats = []
+    for f in vgg.features:
+        feats.append(f)
+        if isinstance(f,nn.MaxPool2d):
+            index.append(nn.Sequential(*feats))
+            feats = []
+    channels = [64, 128, 256, 512, 512]
+    return index, channels
+
+def get_pretrain_resnet(name):
+    print(name)
+    if name=='18':
+        resnet = models.resnet18(pretrained=True)
+    elif name=='34':
+        resnet = models.resnet34(pretrained=True)
+    elif name=='50':
+        resnet = models.resnet50(pretrained=True)
+    else:
+        return None
+    index = nn.ModuleList()
+    a = [resnet.conv1,resnet.bn1,resnet.relu,resnet.maxpool]
+    index.append(nn.Sequential(*a))
+    index.append(resnet.layer1)
+    index.append(resnet.layer2)
+    index.append(resnet.layer3)
+    index.append(resnet.layer4)
+    channels = [64, 64, 128, 256, 512]
+    return index, channels
+
+def get_pretrain(name):
+    if name[0:3]=='vgg':
+        return get_pretrain_vgg(name[3:5])
+    if name[0:6]=='resnet':
+        return get_pretrain_resnet(name[6:8])
+    return None
+
 class FCNX(nn.Module):
 
     def __init__(self, classes):
         super().__init__()
-        vgg16 = models.vgg16(pretrained=True) #.to(torch.device('cuda'))
-        self.features = vgg16.features
+        self.feats, score_idx = get_pretrain('resnet34')
         fix_pretrain(self.modules())
-        idx = [[0,5],[5,10],[10,17],[17,24],[24,31]] # w/o max_pool
-        self.feats = nn.ModuleList()
-        for i in idx:
-            self.feats.append(self.features[i[0]: i[1]])
-        score_idx = [64, 128, 256, 512, 512]
         self.score_feats = nn.ModuleList()
         for i in score_idx:
             self.score_feats.append(Conv1x1(i, classes*2,3,1))
         self.gaus =nn.ModuleList()
         for i in range(4):
-            self.gaus.append(Conv1x1(classes*2,classes*2))
+            self.gaus.append(Conv1x1(classes*8,classes*8))
+        self.upsample=nn.ConvTranspose2d(classes*8,classes*2,3,stride=2,output_padding=1,padding=1)
         self.final = Conv2d(classes*2, classes, 3, 1)
 
     def forward(self, x):
@@ -48,7 +87,7 @@ class FCNX(nn.Module):
         for i in range(len(self.feats)):
             x = self.feats[i](x)
             xs.append(x)
-        for i in range(len(xs)):
+        for i in range(1): #len(xs)):
             e = xs[4-i]
             f = self.score_feats[4-i](e)
             if i<=0:
@@ -60,9 +99,10 @@ class FCNX(nn.Module):
                 fx = fx + f*y
                 #fx = fx +f
             #print("f{}: ".format(i),fs[-1].size())
-
-        return self.final(F.interpolate(fx, scale_factor=2))
-
+        
+        return self.final(F.interpolate(fx, scale_factor=32))
+        #fx = self.upsample(fx)
+        #return self.final(F.interpolate(fx,scale_factor=16))
 class SegNetX(nn.Module):
 
     def __init__(self, classes):
