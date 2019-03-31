@@ -6,40 +6,10 @@ import torch.optim as optim
 import visdom
 from datetime import datetime
 
-# ade metric
-def meanIoU(area_intersection, area_union):
-    iou = 1.0 * np.sum(area_intersection, axis=1) / np.sum(area_union, axis=1)
-    meaniou = np.nanmean(iou)
-    meaniou_no_back = np.nanmean(iou[1:])
-
-    return iou, meaniou, meaniou_no_back
-
-
-def intersectionAndUnion(imPred, imLab, numClass):
-    # Remove classes from unlabeled pixels in gt image.
-    # We should not penalize detections in unlabeled portions of the image.
-    imPred = imPred * (imLab >= 0)
-
-    # Compute area intersection:
-    intersection = imPred * (imPred == imLab)
-    (area_intersection, _) = np.histogram(intersection, bins=numClass,
-                                          range=(1, numClass))
-
-    # Compute area union:
-    (area_pred, _) = np.histogram(imPred, bins=numClass, range=(1, numClass))
-    (area_lab, _) = np.histogram(imLab, bins=numClass, range=(1, numClass))
-    area_union = area_pred + area_lab - area_intersection
-
-    return area_intersection, area_union
-def iou2(imPred, imLab, numClass):
-    i,u = intersectionAndUnion(imPred, imLab, numClass)
-    print(i.size,u.size)
-    iou = 1.0 * np.sum(i, axis=1) / np.sum(u, axis=1)
-    return np.nanmean(iou)    
-def iou(pred, target,n_class):
+def iou2(pred, target,n_class):
     ious = []
     # We should not penalize detections in unlabeled portions of the image.
-    #pred = pred * (target>0)
+    pred = pred * (target>0)
     for cls in range(n_class):
         pred_inds = pred == cls
         target_inds = target == cls
@@ -50,8 +20,13 @@ def iou(pred, target,n_class):
         else:
             ious.append(float(intersection) / max(union, 1))
         # print("cls", cls, pred_inds.sum(), target_inds.sum(), intersection, float(intersection) / max(union, 1))
-    return ious
+    return np.nanmean(ious)
 
+def iou(pred, target,n_class):
+    t = 0
+    for i in range(pred.shape[0]):
+        t += iou2(pred[i], target[i], n_class)
+    return t/pred.shape[0]
 
 def pixel_acc(pred, target):
     correct = (pred == target).sum()
@@ -99,7 +74,6 @@ def restore_label(img): # B,H,W -> B,C,H,W
     return output_img.transpose(0,3,1,2)
 
 def compute(input, label, model, criterion, optimizer=None):
-
     if optimizer:
         optimizer.zero_grad()
     output = model(input)
@@ -117,8 +91,7 @@ def measure(output,label,num_class):
     output_np = np.argmax(output_np, axis=1)
     label = label.cpu().detach().numpy().copy()
     pa = pixel_acc(output_np,label)
-    iu = iou(output_np,label,num_class)
-    miu=np.nanmean(iu)
+    miu = iou(output_np,label,num_class)
     return output_np,label,pa,miu
 
 def train(fcn_model,test_dataloader, train_dataloader,num_class,opt):
@@ -129,7 +102,8 @@ def train(fcn_model,test_dataloader, train_dataloader,num_class,opt):
 
     fcn_model = fcn_model.to(device)
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(fcn_model.parameters()) #, lr=opt.lr)
+    #optimizer = optim.Adam(fcn_model.parameters())
+    optimizer = optim.SGD(fcn_model.parameters(), lr=1e-4) #,momentum=0.2,weight_decay=2e-4)
 
     all_train_loss = []
     all_test_loss = []
@@ -175,7 +149,7 @@ def train(fcn_model,test_dataloader, train_dataloader,num_class,opt):
                 test_pa += pa
                 test_miou += miu
 
-                if np.mod(index+epo, 100) == 0:
+                if np.mod(index+epo, 90) == 0:
                     print(r'Testing... Open http://localhost:8097/ to see test result. pixel_acc:{},mIOU:{}'.format(pa,miu))
                     output_np = restore_label(output_np)
                     bag_msk_np = restore_label(bag_msk_np)
