@@ -8,13 +8,13 @@ from torchvision import models
 def Conv2d(in_channels, out_channels,kernel_size=1,padding=0):
     return nn.Sequential(*[
             nn.Conv2d(in_channels, out_channels,kernel_size,padding=padding,bias=False), #
-            #nn.BatchNorm2d(out_channels),
+            nn.BatchNorm2d(out_channels),
             nn.PReLU() #inplace=True)
         ])
 def Conv1x1(in_channels, out_channels,kernel_size=1,padding=0):
     return nn.Sequential(*[
             nn.Conv2d(in_channels, out_channels,kernel_size,padding=padding),
-            #nn.BatchNorm2d(out_channels),
+            nn.BatchNorm2d(out_channels),
             #nn.ReLU(inplace=True)
         ])
 
@@ -40,7 +40,7 @@ def get_pretrain_vgg(name):
         vgg = models.vgg19(pretrained=True)
     else:
         return None
-    for m in vgg.modules():
+    for i,m in enumerate(vgg.modules()):
         if isinstance(m, nn.Conv2d):
             fix_module(m)
     index = nn.ModuleList()
@@ -50,6 +50,10 @@ def get_pretrain_vgg(name):
         if isinstance(f,nn.MaxPool2d):
             index.append(nn.Sequential(*feats))
             feats = []
+    for i in range(0):
+        for m in index[4-i].modules():
+            if isinstance(m, nn.Conv2d):
+                fix_module(m, True)
     channels = [64, 128, 256, 512, 512]
     return index, channels
 
@@ -85,19 +89,42 @@ def get_pretrain(name):
         return get_pretrain_resnet(name[6:8])
     return None
 
+class UpConv(nn.Module):
+
+    def __init__(self, inplanes, planes, stride=1):
+        super().__init__()
+        if stride>1:
+            self.conv1=nn.ConvTranspose2d(inplanes,planes,3,stride=2,output_padding=1,padding=1)
+            self.upsample = Conv1x1(inplanes, planes)
+        else:
+            self.conv1 = Conv2d(inplanes, planes)
+            self.upsample = None
+        self.conv2 = Conv1x1(planes, planes, 3, 1)
+        init_weights(self.modules())
+
+    def forward(self, x):
+        idx = x
+        if self.upsample is not None:
+            idx = F.interpolate(idx, scale_factor=2)
+            idx = self.upsample(idx)
+        x = self.conv1(x)
+        x = self.conv2(x)
+        return F.relu(x+idx)
+
 class FCNX(nn.Module):
 
     def __init__(self, classes):
         super().__init__()
-        self.feats, score_idx = get_pretrain('resnet18')
+        self.feats, score_idx = get_pretrain('vgg16')
         self.score_feats = nn.ModuleList()
         for i in score_idx:
             self.score_feats.append(Conv2d(i, classes*4, 3,1))
-        self.gaus =nn.ModuleList()
-        for i in range(4):
-            self.gaus.append(Conv1x1(classes*4,classes*4))
-        #self.upsample=nn.ConvTranspose2d(classes*8,classes*2,3,stride=2,output_padding=1,padding=1)
-        self.final = Conv2d(classes*4, classes, 3,1)
+        #self.gaus =nn.ModuleList()
+        #for i in range(4):
+        #    self.gaus.append(Conv1x1(classes*4,classes*4))
+        #self.upsample=nn.ConvTranspose2d(classes*4,classes,3,stride=2,output_padding=1,padding=1)
+        self.upsample = UpConv(classes*4,classes, 2)
+        self.final = Conv2d(classes, classes,3,1)
         init_weights(self.score_feats)
         init_weights(self.final)
 
@@ -111,6 +138,7 @@ class FCNX(nn.Module):
         for i in range(1): #len(xs)):
             e = xs[4-i]
             f = self.score_feats[4-i](F.dropout2d(e))
+            #f = self.block(e)
             if i<=0:
                 fx = f
             else:
@@ -121,7 +149,8 @@ class FCNX(nn.Module):
                 #fx = fx +f
             #print("f{}: ".format(i),fs[-1].size())
         #fx = self.fc(F.dropout2d(fx))
-        return F.interpolate(self.final(fx), size=s)
+        #return F.interpolate(self.final(F.dropout2d(fx)), size=s)
+        return F.interpolate(self.final(self.upsample(fx)), size=s)
         #fx = self.upsample(fx)
         #return self.final(F.interpolate(fx,scale_factor=16))
 class SegNetX(nn.Module):
@@ -130,41 +159,51 @@ class SegNetX(nn.Module):
         super().__init__()
         vgg16 = models.vgg16(pretrained=True) #.to(torch.device('cuda'))
         self.features = vgg16.features
-        fix_pretrain(self.modules())
+        for m in self.modules():
+            fix_module(m)
         idx = [[0,4],[5,9],[10,16],[17,23],[24,30]] # w/o max_pool
         self.feats = nn.ModuleList()
         for i in idx:
             self.feats.append(self.features[i[0]: i[1]])
         score_idx = [64, 128, 256, 512, 512]
         self.score_feats = nn.ModuleList()
-        for i in score_idx:
-            self.score_feats.append(Conv1x1(i, classes*2))
+        for i in range(len(score_idx)-1):
+            self.score_feats.append(Conv2d(score_idx[i+1], score_idx[i],3,1))
 
-        self.final = Conv2d(classes*10, classes, 3, 1)
+        self.final = Conv2d(64, classes, 3, 1)
 
     def forward(self, x):
-        fs = []
+        ms = []
+        ss = []
         for i in range(len(self.feats)):
+            ss.append(x.size())
             x = self.feats[i](x)
-            d,m = F.max_pool2d(x, kernel_size=2, stride=2, return_indices=True)
-            e = F.max_unpool2d(d, m, kernel_size=2, stride=2, output_size=x.size())
-            x = d
-            f = self.score_feats[i](e)
-            k = 1<<i
-            if k>1:
-                f = F.interpolate(f, scale_factor=k)
-            fs.append(f)
+            x,m = F.max_pool2d(x, kernel_size=2, stride=2, return_indices=True)
+            ms.append(m)
+        for i in range(len(self.feats)):
+            #print(x.size(),ms[4-i].size(),ss[4-i])
+            e = F.max_unpool2d(x, ms[4-i], kernel_size=2, stride=2, output_size=ss[4-i])
+            if i<4:
+                x = self.score_feats[3-i](x)
+            else:
+                x = self.final(x)
+            x = F.interpolate(x, scale_factor=2)
+            #k = 1<<i
+            #if k>1:
+            #    f = F.interpolate(f, scale_factor=k)
+            #fs.append(f)
             #print("f{}: ".format(i),fs[-1].size())
-
+        return x
         return self.final(torch.cat(fs,1))
 
 class PSPNetX(nn.Module):
 
     def __init__(self, classes):
         super().__init__()
-        vgg16 = models.vgg16(pretrained=True)
+        vgg16 = models.vgg16(pretrained=True) #.to(torch.device('cuda'))
         self.features = vgg16.features
-        fix_pretrain(self.modules())
+        for m in self.modules():
+            fix_module(m)
         idx = [[0,4],[5,9],[10,16],[17,23],[24,30]] # w/o max_pool
         self.feats = nn.ModuleList()
         for i in idx:
@@ -172,24 +211,26 @@ class PSPNetX(nn.Module):
         score_idx = [64, 128, 256, 512, 512]
         self.score_feats = nn.ModuleList()
         for i in score_idx:
-            self.score_feats.append(Conv1x1(i, classes*2, 2, 1))
-        self.final = Conv2d(classes*10, classes, 3, 1)
+            self.score_feats.append(Conv2d(i, classes*2,2,1))
+        self.final = Conv2d(classes*6, classes, 3, 1)
 
     def forward(self, x):
         fs = []
         for i in range(len(self.feats)):
             x = self.feats[i](x)
+            #print(x.size())
             d = F.max_pool2d(x, kernel_size=2, stride=2)
             e = F.max_pool2d(x, kernel_size=2, stride=1)
             x = d
-            f = self.score_feats[i](e)
+            f = self.score_feats[i](F.dropout2d(e))
             k = 1<<i
             if k>1:
                 f = F.interpolate(f, scale_factor=k)
+            #print(f.size())
             fs.append(f)
             #print("f{}: ".format(i),fs[-1].size())
 
-        return self.final(torch.cat(fs,1))
+        return self.final(torch.cat(fs[2:],1))
 
 if __name__ == "__main__":
     input = torch.randn(4, 3, 160, 160)
