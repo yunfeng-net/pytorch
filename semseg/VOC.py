@@ -13,6 +13,11 @@ import random
 import cv2
 from torch.utils.data import DataLoader
 
+uni_size = (160,160)
+def set_uni_size():
+     h = np.random.randint(5, size=1)
+     uni_size = (96+h[0]*32, 96+h[0]*32)
+
 def uint82bin(n, count=8):
     """returns the binary of integer n, count refers to amount of bits"""
     return ''.join([str((n >> y) & 1) for y in range(count - 1, -1, -1)])
@@ -123,13 +128,20 @@ class VOCClassSegBase(data.Dataset):
         # load image
         img_file = data_file['img']
         img =  Image.open(img_file)
-        img = img.resize((160, 160))
+        us = (160,160)
+        if self.flip_rate>0:
+            us = uni_size
+        img = img.resize(us)
         #img = np.array(img, dtype=np.uint8)
         # load label
         label_file = data_file['label']
         #label = cv2.imread(label_file)
         label = Image.open(label_file)
-        label = label.resize((160,160))
+        label = label.resize(us)
+        if self.flip_rate>0: # training
+            #label = label.resize((5,5))
+            #label = label.resize((160,160))
+            pass
         rd = random.random() 
         if rd < self.flip_rate:
             img   = img.transpose(Image.FLIP_LEFT_RIGHT)
@@ -168,7 +180,7 @@ class VOCClassSegBase(data.Dataset):
         label = label.numpy()
         return img, label
 num_class = 21
-batch_size = 1
+batch_size = 16
 train_data = VOCClassSegBase(phase='train')
 train_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=8)
 test_data = VOCClassSegBase(phase='val')
