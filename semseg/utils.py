@@ -95,15 +95,15 @@ def measure(output,label,num_class):
     return output_np,label,pa,miu
 
 def train(fcn_model,test_dataloader, train_dataloader,num_class,opt):
-
+    from VOC import set_uni_size
     vis = visdom.Visdom()
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     fcn_model = fcn_model.to(device)
     criterion = nn.CrossEntropyLoss()
-    #optimizer = optim.Adam(fcn_model.parameters())
-    optimizer = optim.SGD(fcn_model.parameters(), lr=1e-4) #,momentum=0.2,weight_decay=2e-4)
+    optimizer = optim.Adam(fcn_model.parameters()) #, lr=1e-4)
+    #optimizer = optim.SGD(fcn_model.parameters(), lr=1e-4,momentum=0.9,weight_decay=2e-4)
 
     all_train_loss = []
     all_test_loss = []
@@ -116,6 +116,7 @@ def train(fcn_model,test_dataloader, train_dataloader,num_class,opt):
         
         train_loss = 0
         fcn_model.train()
+        set_uni_size()
         for index, (bag, bag_msk) in enumerate(train_dataloader):
             # bag.shape is torch.Size([4, 3, 160, 160])
             # bag_msk.shape is torch.Size([4, 160, 160])
