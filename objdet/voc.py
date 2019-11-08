@@ -188,18 +188,44 @@ class VOCDetection(data.Dataset):
         '''
         return torch.Tensor(self.pull_image(index)).unsqueeze_(0)
 
+def detection_collate(batch):
+    """Custom collate fn for dealing with batches of images that have a differen
+t
+    number of associated object annotations (bounding boxes).
+
+    Arguments:
+        batch: (tuple) A tuple of tensor images and lists of annotations
+
+    Return:
+        A tuple containing:
+            1) (tensor) batch of images stacked on their 0 dim
+            2) (list of tensors) annotations for a given image are stacked on
+                                 0 dim
+    """
+    targets = []
+    imgs = []
+    for sample in batch:
+        imgs.append(sample[0])
+        targets.append(torch.FloatTensor(sample[1]))
+    return torch.stack(imgs, 0), targets
+
 num_class = 21
 batch_size = 32
-train_data = VOCDetection(VOC_ROOT)
-train_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=4)
+train_data = VOCDetection(VOC_ROOT, transform=SSDAugmentation(160))
+train_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=4,collate_fn=detection_collate,
+                                  pin_memory=True)
 test_data = VOCDetection(VOC_ROOT,image_sets=[('2007', 'val'), ('2012', 'val')])
-test_dataloader = DataLoader(test_data, batch_size=batch_size, num_workers=4)
+test_dataloader = DataLoader(test_data, batch_size=batch_size, num_workers=4,collate_fn=detection_collate,
+                                  pin_memory=True)
 
 if __name__ == "__main__":
-    sb = VOCDetection(VOC_ROOT, transform=SSDAugmentation(300))
+    sb = test_data
     for i in range(len(sb)):
         sample,label = sb[i]
         print(sample,label)
+        print(sample.shape,len(label),len(sb))
+        for index, (sample,label) in enumerate(train_dataloader):
+            print(sample.shape,len(label))
         break
         plt.figure()
         plt.axis('off')

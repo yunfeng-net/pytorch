@@ -50,13 +50,6 @@ def get_pretrain_vgg(name):
         if isinstance(f,nn.MaxPool2d):
             index.append(nn.Sequential(*feats))
             feats = []
-    for i in range(0):
-        j = 0
-        for m in index[4-i].modules():
-            if isinstance(m, nn.Conv2d):
-                if j>=0:
-                    fix_module(m, True)
-                j += 1
     channels = [64, 128, 256, 512, 512]
     return index, channels
 
