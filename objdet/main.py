@@ -11,14 +11,14 @@ parser.add_argument('--lr', type=float,default=1e-3)
 parser.add_argument('--momentum', type=float, default=0.7)   
 parser.add_argument('--model', default='YOLO') 
 parser.add_argument('--e', type=int, default=50)
-parser.add_argument('--visdom', default=False, type=str2bool,
+parser.add_argument('--visdom', default=False, type=str,
                     help='Use visdom for loss visualization')
 opt = parser.parse_args()
 
 if __name__ == "__main__":
     
 
-    from VOC import test_dataloader, train_dataloader,num_class
+    from voc import test_dataloader, train_dataloader,num_class
     if opt.load:
         model = torch.load(opt.load)
     elif opt.model=='YOLO':
@@ -30,4 +30,7 @@ if __name__ == "__main__":
     if opt.eval:
         print("not ready")
     else:
-        train(model,test_dataloader, train_dataloader,num_class,opt)
+        vis = None
+        if opt.visdom:
+            vis = visdom.Visdom()
+        train(vis, model,test_dataloader, train_dataloader,num_class,opt)

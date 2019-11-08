@@ -14,6 +14,7 @@ import cv2
 import numpy as np
 from matplotlib import pyplot as plt
 from torch.utils.data import DataLoader
+from augmentations import SSDAugmentation
 
 if sys.version_info[0] == 2:
     import xml.etree.cElementTree as ET
@@ -195,7 +196,7 @@ test_data = VOCDetection(VOC_ROOT,image_sets=[('2007', 'val'), ('2012', 'val')])
 test_dataloader = DataLoader(test_data, batch_size=batch_size, num_workers=4)
 
 if __name__ == "__main__":
-    sb = VOCDetection(VOC_ROOT)
+    sb = VOCDetection(VOC_ROOT, transform=SSDAugmentation(300))
     for i in range(len(sb)):
         sample,label = sb[i]
         print(sample,label)

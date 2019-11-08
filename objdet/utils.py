@@ -95,9 +95,9 @@ def measure(output,label,num_class):
     miu = iou(output_np,label,num_class)
     return output_np,label,pa,miu
 
-def train(fcn_model,test_dataloader, train_dataloader,num_class,opt):
-    from VOC import set_uni_size
-    vis = visdom.Visdom()
+def train(vis, fcn_model,test_dataloader, train_dataloader,num_class,opt):
+    #from VOC import set_uni_size
+
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -117,7 +117,7 @@ def train(fcn_model,test_dataloader, train_dataloader,num_class,opt):
         
         train_loss = 0
         fcn_model.train()
-        set_uni_size()
+        #set_uni_size()
         for index, (bag, bag_msk) in enumerate(train_dataloader):
             # bag.shape is torch.Size([4, 3, 160, 160])
             # bag_msk.shape is torch.Size([4, 160, 160])
@@ -131,7 +131,8 @@ def train(fcn_model,test_dataloader, train_dataloader,num_class,opt):
                 print('epoch {}, {}/{},train loss is {}'.format(epo, index, len(train_dataloader), iter_loss))
         train_loss /= len(train_dataloader)
         all_train_loss.append(train_loss)
-        vis.line(all_train_loss, win='train_loss',opts=dict(title='train loss'))
+        if vis:
+            vis.line(all_train_loss, win='train_loss',opts=dict(title='train loss'))
 
         test_loss = 0
         test_pa = 0
@@ -155,8 +156,9 @@ def train(fcn_model,test_dataloader, train_dataloader,num_class,opt):
                     print(r'Testing... Open http://localhost:8097/ to see test result. pixel_acc:{},mIOU:{}'.format(pa,miu))
                     output_np = restore_label(output_np)
                     bag_msk_np = restore_label(bag_msk_np)
-                    vis.images(output_np[:, :, :, :], win='test_pred', opts=dict(title='test prediction')) 
-                    vis.images(bag_msk_np[:, :, :, :], win='test_label', opts=dict(title='label'))
+                    if vis:
+                        vis.images(output_np[:, :, :, :], win='test_pred', opts=dict(title='test prediction')) 
+                        vis.images(bag_msk_np[:, :, :, :], win='test_label', opts=dict(title='label'))
 
         cur_time = datetime.now()
         t = (cur_time - prev_time).seconds
@@ -173,9 +175,10 @@ def train(fcn_model,test_dataloader, train_dataloader,num_class,opt):
         all_test_miou.append(test_miou)
         all_test_pa.append(test_pa)
         all_test_loss.append(test_loss)
-        vis.line(all_test_loss, win='test_loss',opts=dict(title='test loss'))
-        vis.line(all_test_pa, win='test_pa',opts=dict(title='test pa'))
-        vis.line(all_test_miou, win='test_mIOU',opts=dict(title='test mIOU'))
+        if vis:
+            vis.line(all_test_loss, win='test_loss',opts=dict(title='test loss'))
+            vis.line(all_test_pa, win='test_pa',opts=dict(title='test pa'))
+            vis.line(all_test_miou, win='test_mIOU',opts=dict(title='test mIOU'))
 
         if np.mod(epo+1, 5) == 0:
             s = 'checkpoints/{}_{}_{}.pt'.format(opt.model,opt.data,epo)
