@@ -6,74 +6,6 @@ import torch.optim as optim
 import visdom
 from datetime import datetime
 
-def iou2(pred, target,n_class):
-    ious = []
-    # We should not penalize detections in unlabeled portions of the image.
-    pred = pred * (target>0)
-    for cls in range(n_class):
-        pred_inds = pred == cls
-        target_inds = target == cls
-        intersection = pred_inds[target_inds].sum()
-        union = pred_inds.sum() + target_inds.sum() - intersection
-        if union == 0:
-            ious.append(float('nan'))  # if there is no ground truth, do not include in evaluation
-        else:
-            ious.append(float(intersection) / max(union, 1))
-        # print("cls", cls, pred_inds.sum(), target_inds.sum(), intersection, float(intersection) / max(union, 1))
-    return np.nanmean(ious)
-
-def iou(pred, target,n_class):
-    t = 0
-    for i in range(pred.shape[0]):
-        t += iou2(pred[i], target[i], n_class)
-    return t/pred.shape[0]
-
-def pixel_acc(pred, target):
-    #pred = pred * (target>0)
-    correct = (pred == target).sum()
-    total   = (target == target).sum()
-    return correct / total
-
-def restore_label(img): # B,H,W -> B,C,H,W
-    color_index = [(64, 128, 64) ,
-        (192, 0, 128) ,
-        (0, 128, 192) ,
-        (0, 128, 64) ,
-        (128, 0, 0) ,
-        (64, 0, 128) ,
-        (64, 0, 192) ,
-        (192, 128, 64) ,
-        (192, 192, 128) ,
-        (64, 64, 128) ,
-        (128, 0, 192) ,
-        (192, 0, 64) ,
-        (128, 128, 64) ,
-        (192, 0, 192) ,
-        (128, 64, 64) ,
-        (64, 192, 128) ,
-        (64, 64, 0) ,
-        (128, 64, 128) ,
-        (128, 128, 192) ,
-        (0, 0, 192) ,
-        (192, 128, 128) ,
-        (128, 128, 128) ,
-        (64, 128, 192) ,
-        (0, 0, 64) ,
-        (0, 64, 64) ,
-        (192, 64, 128) ,
-        (128, 128, 0) ,
-        (192, 128, 192) ,
-        (64, 0, 64) ,
-        (192, 192, 0) ,
-        (0, 0, 0) ,
-        (64, 192, 0) ]
-    b,h,w = img.shape
-    output_img = np.zeros((b,h, w, 3), dtype=np.uint8)
-    for i, color in enumerate(color_index):
-        output_img[img == i, :] = color
-    #print(output_img.shape)
-    return output_img.transpose(0,3,1,2)
-
 def compute(input, label, model, criterion, optimizer=None):
     if optimizer:
         optimizer.zero_grad()
@@ -95,14 +27,13 @@ def measure(output,label,num_class):
     miu = iou(output_np,label,num_class)
     return output_np,label,pa,miu
 
-def train(vis, fcn_model,test_dataloader, train_dataloader,num_class,opt):
+def train(vis, fcn_model,test_dataloader, train_dataloader,criterion,num_class,opt):
     #from VOC import set_uni_size
 
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     fcn_model = fcn_model.to(device)
-    criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(fcn_model.parameters(), lr=opt.lr)
     #optimizer = optim.SGD(fcn_model.parameters(), lr=1e-3, momentum=0.9,weight_decay=2e-4)
 
@@ -135,7 +66,6 @@ def train(vis, fcn_model,test_dataloader, train_dataloader,num_class,opt):
             vis.line(all_train_loss, win='train_loss',opts=dict(title='train loss'))
 
         test_loss = 0
-        test_pa = 0
         test_miou = 0
         fcn_model.eval()
         with torch.no_grad():
@@ -147,9 +77,8 @@ def train(vis, fcn_model,test_dataloader, train_dataloader,num_class,opt):
                 iter_loss, output = compute(bag, bag_msk,fcn_model,criterion)
                 test_loss += iter_loss
                 
-                output_np,bag_msk_np,pa,miu, = measure(output,bag_msk,num_class)
+                output_np,bag_msk_np, = measure(output,bag_msk,num_class)
 
-                test_pa += pa
                 test_miou += miu
 
                 if np.mod(index+epo, 90) == 0:
@@ -167,17 +96,14 @@ def train(vis, fcn_model,test_dataloader, train_dataloader,num_class,opt):
         time_str = "Time %02d:%02d:%02d" % (h, m, s)
         prev_time = cur_time
         N = len(test_dataloader)
-        test_pa /=  N
         test_miou /= N
         test_loss /= N
-        print('|%.3f|%.3f|%.3f|%.3f|%.0f|'
-                %(train_loss, test_loss, test_pa, test_miou, t))
+        print('|%.3f|%.3f|%.3f|%.0f|'
+                %(train_loss, test_loss, test_miou, t))
         all_test_miou.append(test_miou)
-        all_test_pa.append(test_pa)
         all_test_loss.append(test_loss)
         if vis:
             vis.line(all_test_loss, win='test_loss',opts=dict(title='test loss'))
-            vis.line(all_test_pa, win='test_pa',opts=dict(title='test pa'))
             vis.line(all_test_miou, win='test_mIOU',opts=dict(title='test mIOU'))
 
         if np.mod(epo+1, 5) == 0:
