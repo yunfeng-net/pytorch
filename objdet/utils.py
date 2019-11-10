@@ -27,15 +27,15 @@ def measure(output,label,num_class):
     miu = iou(output_np,label,num_class)
     return output_np,label,pa,miu
 
-def train(vis, fcn_model,test_dataloader, train_dataloader,criterion,num_class,opt):
+def train(vis, network,test_dataloader, train_dataloader,criterion,num_class,opt):
     #from VOC import set_uni_size
 
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    fcn_model = fcn_model.to(device)
-    optimizer = optim.Adam(fcn_model.parameters(), lr=opt.lr)
-    #optimizer = optim.SGD(fcn_model.parameters(), lr=1e-3, momentum=0.9,weight_decay=2e-4)
+    network = network.to(device)
+    optimizer = optim.Adam(network.parameters(), lr=opt.lr)
+    #optimizer = optim.SGD(network.parameters(), lr=1e-3, momentum=0.9,weight_decay=2e-4)
 
     all_train_loss = []
     all_test_loss = []
@@ -47,15 +47,15 @@ def train(vis, fcn_model,test_dataloader, train_dataloader,criterion,num_class,o
     for epo in range(opt.e):
         
         train_loss = 0
-        fcn_model.train()
+        network.train()
         #set_uni_size()
-        for index, (bag, bag_msk) in enumerate(train_dataloader):
-            # bag.shape is torch.Size([4, 3, 160, 160])
-            # bag_msk.shape is torch.Size([4, 160, 160])
-            bag = bag.to(device)
-            bag_msk = bag_msk.to(device)
+        for index, (sample, label) in enumerate(train_dataloader):
+            # sample.shape is torch.Size([4, 3, 160, 160])
+            # label.shape is torch.Size([4, 160, 160])
+            sample = sample.to(device)
+            #label = label.to(device)
 
-            iter_loss, _ = compute(bag, bag_msk,fcn_model,criterion, optimizer)
+            iter_loss, _ = compute(sample, label,network,criterion, optimizer)
             train_loss += iter_loss
 
             if np.mod(index, 100) == 0:
@@ -67,27 +67,27 @@ def train(vis, fcn_model,test_dataloader, train_dataloader,criterion,num_class,o
 
         test_loss = 0
         test_miou = 0
-        fcn_model.eval()
+        network.eval()
         with torch.no_grad():
-            for index, (bag, bag_msk) in enumerate(test_dataloader):
+            for index, (sample, label) in enumerate(test_dataloader):
 
-                bag = bag.to(device)
-                bag_msk = bag_msk.to(device)
+                sample = sample.to(device)
+                label = label.to(device)
 
-                iter_loss, output = compute(bag, bag_msk,fcn_model,criterion)
+                iter_loss, output = compute(sample, label,network,criterion)
                 test_loss += iter_loss
                 
-                output_np,bag_msk_np, = measure(output,bag_msk,num_class)
+                output_np,label_np, = measure(output,label,num_class)
 
                 test_miou += miu
 
                 if np.mod(index+epo, 90) == 0:
                     print(r'Testing... Open http://localhost:8097/ to see test result. pixel_acc:{},mIOU:{}'.format(pa,miu))
                     output_np = restore_label(output_np)
-                    bag_msk_np = restore_label(bag_msk_np)
+                    label_np = restore_label(label_np)
                     if vis:
                         vis.images(output_np[:, :, :, :], win='test_pred', opts=dict(title='test prediction')) 
-                        vis.images(bag_msk_np[:, :, :, :], win='test_label', opts=dict(title='label'))
+                        vis.images(label_np[:, :, :, :], win='test_label', opts=dict(title='label'))
 
         cur_time = datetime.now()
         t = (cur_time - prev_time).seconds
@@ -108,5 +108,5 @@ def train(vis, fcn_model,test_dataloader, train_dataloader,criterion,num_class,o
 
         if np.mod(epo+1, 5) == 0:
             s = 'checkpoints/{}_{}_{}.pt'.format(opt.model,opt.data,epo)
-            torch.save(fcn_model, s)
+            torch.save(network, s)
             print('saveing {}'.format(s))
