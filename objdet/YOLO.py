@@ -5,7 +5,7 @@ import torch.nn.functional as F
 
 from torchvision import models
 from blocks import *
-from box_utils import jaccard
+from box_utils import jaccard,point_form
 
 class YOLO(nn.Module):
 
@@ -28,9 +28,9 @@ class YOLO(nn.Module):
 
     def forward(self, x):
         y = self.features(x)
-        #print(y.shape)
-        z= y.view(y.size(0), -1)
-        return self.detect(z)
+        z = y.view(y.size(0), -1)
+        r = self.detect(z)
+        return r
 
 class YoloLoss(nn.Module):
     def __init__(self, n_batch, B, S, C, l_coord, l_noobj, use_gpu=True):
@@ -49,6 +49,7 @@ class YoloLoss(nn.Module):
         self.l_coord = l_coord
         self.l_noobj = l_noobj
         self.use_gpu = use_gpu
+        self.kind_loss = nn.CrossEntropyLoss()
 
     def encode(self,labels):
         '''
@@ -61,7 +62,6 @@ class YoloLoss(nn.Module):
         cell_size = 1./grid_num
         for j,data in enumerate(labels):
             boxes = data[:,:4]
-            #print(boxes.shape,boxes[:,2:],boxes[:,:2])
             wh = boxes[:,2:]-boxes[:,:2]
             cxcy = (boxes[:,2:]+boxes[:,:2])/2
             for i in range(cxcy.size()[0]):
@@ -69,12 +69,12 @@ class YoloLoss(nn.Module):
                 ij = (cxcy_sample/cell_size).ceil()-1 #
                 target[j,int(ij[1]),int(ij[0]),4] = 1
                 target[j,int(ij[1]),int(ij[0]),9] = 1
-                target[j,int(ij[1]),int(ij[0]),int(data[i,4])+9] = 1
-                xy = ij*cell_size #匹配到的网格的左上角相对坐标
+                target[j,int(ij[1]),int(ij[0]),10] = int(data[i,4])
+                xy = ij*cell_size 
                 delta_xy = (cxcy_sample -xy)/cell_size
-                target[j,int(ij[1]),int(ij[0]),2:4] = wh[i]
+                target[j,int(ij[1]),int(ij[0]),2:4] = wh[i]*grid_num
                 target[j,int(ij[1]),int(ij[0]),:2] = delta_xy
-                target[j,int(ij[1]),int(ij[0]),7:9] = wh[i]
+                target[j,int(ij[1]),int(ij[0]),7:9] = wh[i]*grid_num
                 target[j,int(ij[1]),int(ij[0]),5:7] = delta_xy
         return target
     
@@ -86,16 +86,15 @@ class YoloLoss(nn.Module):
         """
         n_elements = self.B * 5 + self.C
         target = self.encode(target) # Tensor [batch,SxSx(Bx5+20)]
-        #print(prediction.shape,target.shape)
+
         batch = target.size(0)
         target = target.view(batch,-1,n_elements)
-        #print(target.size())
-        #print(prediction.size())
         prediction = prediction.view(batch,-1,n_elements)
         coord_mask = target[:,:,4] > 0
         noobj_mask = target[:,:,4] == 0
         coord_mask = coord_mask.unsqueeze(-1).expand_as(target)
         noobj_mask = noobj_mask.unsqueeze(-1).expand_as(target)
+
 
         coord_pred = prediction[coord_mask].view(-1,n_elements)
         class_pred = coord_pred[:,self.B*5:]
@@ -103,7 +102,7 @@ class YoloLoss(nn.Module):
         noobj_pred = prediction[noobj_mask].view(-1,n_elements)
 
         coord_target = target[coord_mask].view(-1,n_elements)
-        class_target = coord_target[:,self.B*5:]
+        class_target = coord_target[:,self.B*5]
         box_target = coord_target[:,:self.B*5].contiguous().view(-1,5)
         noobj_target = target[noobj_mask].view(-1,n_elements)
 
@@ -132,7 +131,7 @@ class YoloLoss(nn.Module):
         for i in range(0,box_target.size()[0],self.B):
             box1 = box_pred[i:i+self.B]
             box2 = box_target[i:i+self.B]
-            iou = jaccard(box1[:, :4], box2[:, :4])
+            iou = jaccard(point_form(box1[:, :4]), point_form(box2[:, :4]))
             max_iou, max_index = iou.max(0)
             if self.use_gpu:
                 max_index = max_index.data.cuda()
@@ -146,7 +145,7 @@ class YoloLoss(nn.Module):
         box_target_response = box_target[coord_response_mask].view(-1, 5)
         contain_loss = F.mse_loss(box_pred_response[:, 4], box_target_response[:, 4], size_average=False)
         loc_loss = F.mse_loss(box_pred_response[:, :2], box_target_response[:, :2], size_average=False) +\
-                   F.mse_loss(torch.sqrt(box_pred_response[:, 2:4]), torch.sqrt(box_target_response[:, 2:4]), size_average=False)
+                   F.mse_loss(box_pred_response[:, 2:4], box_target_response[:, 2:4], size_average=False)
         # 2. not response loss
         box_pred_not_response = box_pred[coord_not_response_mask].view(-1, 5)
         box_target_not_response = box_target[coord_not_response_mask].view(-1, 5)
@@ -154,7 +153,8 @@ class YoloLoss(nn.Module):
         not_contain_loss = F.mse_loss(box_pred_not_response[:,4], box_target_not_response[:,4],size_average=False)
 
         # compute class prediction loss
-        class_loss = F.mse_loss(class_pred, class_target, size_average=False)
+        #class_loss = F.mse_loss(class_pred, class_target, size_average=False)
+        class_loss = self.kind_loss(class_pred, class_target.long())
 
         # compute total loss
         total_loss = self.l_coord * loc_loss + contain_loss + self.l_noobj * noobj_loss + class_loss
@@ -162,4 +162,6 @@ class YoloLoss(nn.Module):
 
 if __name__ == "__main__":
     input = torch.randn(4, 3, 160, 160)
-    output = YOLO(2)(input)
+    net = YOLO(2)
+    net.train()
+    output = net(input)

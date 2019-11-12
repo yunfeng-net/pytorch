@@ -67,12 +67,13 @@ def train(vis, network,test_dataloader, train_dataloader,criterion,num_class,opt
 
         test_loss = 0
         test_miou = 0
+        '''
         network.eval()
         with torch.no_grad():
             for index, (sample, label) in enumerate(test_dataloader):
 
                 sample = sample.to(device)
-                label = label.to(device)
+                #label = label.to(device)
 
                 iter_loss, output = compute(sample, label,network,criterion)
                 test_loss += iter_loss
@@ -105,8 +106,8 @@ def train(vis, network,test_dataloader, train_dataloader,criterion,num_class,opt
         if vis:
             vis.line(all_test_loss, win='test_loss',opts=dict(title='test loss'))
             vis.line(all_test_miou, win='test_mIOU',opts=dict(title='test mIOU'))
-
+        '''
         if np.mod(epo+1, 5) == 0:
-            s = 'checkpoints/{}_{}_{}.pt'.format(opt.model,opt.data,epo)
+            s = 'checkpoints/{}_voc_{}.pt'.format(opt.model,epo)
             torch.save(network, s)
             print('saveing {}'.format(s))

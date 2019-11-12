@@ -14,7 +14,7 @@ import cv2
 import numpy as np
 from matplotlib import pyplot as plt
 from torch.utils.data import DataLoader
-from augmentations import SSDAugmentation
+from augmentations import SSDAugmentation,SSDAugmentationTest
 
 if sys.version_info[0] == 2:
     import xml.etree.cElementTree as ET
@@ -210,11 +210,11 @@ t
     return torch.stack(imgs, 0), targets
 
 num_class = 21
-batch_size = 32
-train_data = VOCDetection(VOC_ROOT, transform=SSDAugmentation(160))
+batch_size = 128
+train_data = VOCDetection(VOC_ROOT, transform=SSDAugmentation(160, ))
 train_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=4,collate_fn=detection_collate,
                                   pin_memory=True)
-test_data = VOCDetection(VOC_ROOT,image_sets=[('2007', 'val'), ('2012', 'val')])
+test_data = VOCDetection(VOC_ROOT, transform=SSDAugmentationTest(160,) ,image_sets=[('2007', 'val'), ('2012', 'val')])
 test_dataloader = DataLoader(test_data, batch_size=batch_size, num_workers=4,collate_fn=detection_collate,
                                   pin_memory=True)
 
@@ -225,7 +225,7 @@ if __name__ == "__main__":
         print(sample,label)
         print(sample.shape,len(label),len(sb))
         for index, (sample,label) in enumerate(train_dataloader):
-            print(sample.shape,len(label))
+            print(index,sample.shape,len(label))
         break
         plt.figure()
         plt.axis('off')
