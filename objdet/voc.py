@@ -210,7 +210,7 @@ t
     return torch.stack(imgs, 0), targets
 
 num_class = 21
-batch_size = 128
+batch_size = 256
 train_data = VOCDetection(VOC_ROOT, transform=SSDAugmentation(160, ))
 train_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=4,collate_fn=detection_collate,
                                   pin_memory=True)

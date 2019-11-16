@@ -27,6 +27,14 @@ def measure(output,label,num_class):
     miu = iou(output_np,label,num_class)
     return output_np,label,pa,miu
 
+def get_time(prev_time):
+    cur_time = datetime.now() # FPS
+    t = (cur_time - prev_time).seconds
+    h, remainder = divmod(t, 3600)
+    m, s = divmod(remainder, 60)
+    time_str = "Time %02d:%02d:%02d" % (h, m, s)
+    return time_str, cur_time
+
 def train(vis, network,test_dataloader, train_dataloader,criterion,num_class,opt):
     #from VOC import set_uni_size
 
@@ -58,30 +66,15 @@ def train(vis, network,test_dataloader, train_dataloader,criterion,num_class,opt
             iter_loss, _ = compute(sample, label,network,criterion, optimizer)
             train_loss += iter_loss
 
-            if np.mod(index, 100) == 0:
-                print('epoch {}, {}/{},train loss is {}'.format(epo, index, len(train_dataloader), iter_loss))
+            #if np.mod(index, 100) == 0:
+            #    print('epoch {}, {}/{},train loss is {}'.format(epo, index, len(train_dataloader), iter_loss))
         train_loss /= len(train_dataloader)
         all_train_loss.append(train_loss)
         if vis:
             vis.line(all_train_loss, win='train_loss',opts=dict(title='train loss'))
 
-        test_loss = 0
-        test_miou = 0
+
         '''
-        network.eval()
-        with torch.no_grad():
-            for index, (sample, label) in enumerate(test_dataloader):
-
-                sample = sample.to(device)
-                #label = label.to(device)
-
-                iter_loss, output = compute(sample, label,network,criterion)
-                test_loss += iter_loss
-                
-                output_np,label_np, = measure(output,label,num_class)
-
-                test_miou += miu
-
                 if np.mod(index+epo, 90) == 0:
                     print(r'Testing... Open http://localhost:8097/ to see test result. pixel_acc:{},mIOU:{}'.format(pa,miu))
                     output_np = restore_label(output_np)
@@ -90,12 +83,6 @@ def train(vis, network,test_dataloader, train_dataloader,criterion,num_class,opt
                         vis.images(output_np[:, :, :, :], win='test_pred', opts=dict(title='test prediction')) 
                         vis.images(label_np[:, :, :, :], win='test_label', opts=dict(title='label'))
 
-        cur_time = datetime.now()
-        t = (cur_time - prev_time).seconds
-        h, remainder = divmod(t, 3600)
-        m, s = divmod(remainder, 60)
-        time_str = "Time %02d:%02d:%02d" % (h, m, s)
-        prev_time = cur_time
         N = len(test_dataloader)
         test_miou /= N
         test_loss /= N
@@ -107,7 +94,30 @@ def train(vis, network,test_dataloader, train_dataloader,criterion,num_class,opt
             vis.line(all_test_loss, win='test_loss',opts=dict(title='test loss'))
             vis.line(all_test_miou, win='test_mIOU',opts=dict(title='test mIOU'))
         '''
+        time_str, prev_time = get_time(prev_time)
+        print("epoch {}, averge train loss: {:.2f}, {}".format(epo,train_loss,time_str))
+
         if np.mod(epo+1, 5) == 0:
             s = 'checkpoints/{}_voc_{}.pt'.format(opt.model,epo)
             torch.save(network, s)
-            print('saveing {}'.format(s))
+            #print('saveing {}'.format(s))
+
+            test_loss = 0
+            network.eval()
+            with torch.no_grad():
+                for index, (sample, label) in enumerate(test_dataloader):
+
+                    sample = sample.to(device)
+                    #label = label.to(device)
+
+                    iter_loss, output = compute(sample, label,network,criterion)
+                    test_loss += iter_loss
+                    
+                    #output_np,label_np, = measure(output,label,num_class)
+
+                    #test_miou += miu
+            time_str, prev_time = get_time(prev_time)
+            test_loss /= len(test_dataloader)
+            print("saveing {}, averge test loss: {:.2f}, {}".format(s,test_loss,time_str))
+
+

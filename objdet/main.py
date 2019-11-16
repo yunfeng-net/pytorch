@@ -7,7 +7,7 @@ from blocks import fix_module
 parser = argparse.ArgumentParser()
 parser.add_argument('--load')  
 parser.add_argument('--eval')  
-parser.add_argument('--lr', type=float,default=1e-3)  
+parser.add_argument('--lr', type=float,default=1e-4)  
 parser.add_argument('--momentum', type=float, default=0.7)   
 parser.add_argument('--model', default='YOLO') 
 parser.add_argument('--e', type=int, default=50)
@@ -23,8 +23,8 @@ if __name__ == "__main__":
         model = torch.load(opt.load)
     elif opt.model=='YOLO':
         from YOLO import YOLO,YoloLoss
-        loss = YoloLoss(batch_size,2,5,num_class-1,5,0.5)
-        model = YOLO(num_class-1)
+        model = YOLO(num_class,1)
+        loss = YoloLoss(model, batch_size,5,0.5)
     else:
         print("the model name is wrong {}".format(opt.model))
         exit(-1)

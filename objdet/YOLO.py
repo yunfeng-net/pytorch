@@ -9,14 +9,15 @@ from box_utils import jaccard,point_form
 
 class YOLO(nn.Module):
 
-    def __init__(self, classes):
+    def __init__(self, classes, B = 1):
         super().__init__()
         vgg16 = models.vgg16_bn(pretrained=True)
         self.features = vgg16.features
         for m in self.modules():
             fix_module(m)
-        grid = 5
-        B = 2
+        self.grid = grid = 5
+        self.b = B
+        self.classes = classes
 
         self.detect = nn.Sequential(
             #nn.Flatten(),
@@ -32,8 +33,11 @@ class YOLO(nn.Module):
         r = self.detect(z)
         return r
 
+    def attr(self):
+        return self.grid,self.b,self.classes
+
 class YoloLoss(nn.Module):
-    def __init__(self, n_batch, B, S, C, l_coord, l_noobj, use_gpu=True):
+    def __init__(self, yolo, n_batch, l_coord, l_noobj, use_gpu=True):
         """
         :param n_batch: number of batches
         :param B: number of bounding boxes
@@ -43,13 +47,12 @@ class YoloLoss(nn.Module):
         """
         super(YoloLoss, self).__init__()
         self.n_batch = n_batch
-        self.B = B # assume there are two bounding boxes
-        self.S = S # grid number
-        self.C = C
+        self.S, self.B, self.C = yolo.attr()
         self.l_coord = l_coord
         self.l_noobj = l_noobj
         self.use_gpu = use_gpu
         self.kind_loss = nn.CrossEntropyLoss()
+        self.blief_loss = nn.BCEWithLogitsLoss()
 
     def encode(self,labels):
         '''
@@ -67,15 +70,15 @@ class YoloLoss(nn.Module):
             for i in range(cxcy.size()[0]):
                 cxcy_sample = cxcy[i]
                 ij = (cxcy_sample/cell_size).ceil()-1 #
-                target[j,int(ij[1]),int(ij[0]),4] = 1
-                target[j,int(ij[1]),int(ij[0]),9] = 1
+                for k in range(self.B):
+                    target[j,int(ij[1]),int(ij[0]),4+self.S*k] = 1
                 target[j,int(ij[1]),int(ij[0]),10] = int(data[i,4])
                 xy = ij*cell_size 
                 delta_xy = (cxcy_sample -xy)/cell_size
-                target[j,int(ij[1]),int(ij[0]),2:4] = wh[i]*grid_num
-                target[j,int(ij[1]),int(ij[0]),:2] = delta_xy
-                target[j,int(ij[1]),int(ij[0]),7:9] = wh[i]*grid_num
-                target[j,int(ij[1]),int(ij[0]),5:7] = delta_xy
+                for k in range(self.B):
+                    s = self.S*k
+                    target[j,int(ij[1]),int(ij[0]),s+2:s+4] = wh[i]*grid_num
+                    target[j,int(ij[1]),int(ij[0]),s:s+2] = delta_xy
         return target
     
     def forward(self, prediction, target):
@@ -143,22 +146,24 @@ class YoloLoss(nn.Module):
         # 1. response loss
         box_pred_response = box_pred[coord_response_mask].view(-1, 5)
         box_target_response = box_target[coord_response_mask].view(-1, 5)
-        contain_loss = F.mse_loss(box_pred_response[:, 4], box_target_response[:, 4], size_average=False)
-        loc_loss = F.mse_loss(box_pred_response[:, :2], box_target_response[:, :2], size_average=False) +\
-                   F.mse_loss(box_pred_response[:, 2:4], box_target_response[:, 2:4], size_average=False)
+        #contain_loss = F.mse_loss(box_pred_response[:, 4], box_target_response[:, 4], size_average=False)
+        contain_loss = self.blief_loss(box_pred_response[:, 4], box_target_response[:, 4])
+        loc_loss = F.mse_loss(box_pred_response[:, :2], box_target_response[:, :2]) +\
+                   F.mse_loss(box_pred_response[:, 2:4], box_target_response[:, 2:4])
         # 2. not response loss
         box_pred_not_response = box_pred[coord_not_response_mask].view(-1, 5)
         box_target_not_response = box_target[coord_not_response_mask].view(-1, 5)
         box_target_not_response[:,4]= 0
-        not_contain_loss = F.mse_loss(box_pred_not_response[:,4], box_target_not_response[:,4],size_average=False)
-
+        #not_contain_loss = F.mse_loss(box_pred_not_response[:,4], box_target_not_response[:,4],size_average=False)
+        #not_contain_loss = self.blief_loss(box_pred_not_response[:, 4], box_target_not_response[:, 4])
         # compute class prediction loss
         #class_loss = F.mse_loss(class_pred, class_target, size_average=False)
         class_loss = self.kind_loss(class_pred, class_target.long())
 
         # compute total loss
         total_loss = self.l_coord * loc_loss + contain_loss + self.l_noobj * noobj_loss + class_loss
-        return total_loss
+        #return total_loss
+        return class_loss+contain_loss+self.l_coord * loc_loss #+not_contain_loss
 
 if __name__ == "__main__":
     input = torch.randn(4, 3, 160, 160)
