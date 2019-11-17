@@ -7,7 +7,7 @@ from blocks import fix_module
 parser = argparse.ArgumentParser()
 parser.add_argument('--load')  
 parser.add_argument('--eval')  
-parser.add_argument('--lr', type=float,default=1e-4)  
+parser.add_argument('--lr', type=float,default=2e-4)  
 parser.add_argument('--momentum', type=float, default=0.7)   
 parser.add_argument('--model', default='YOLO') 
 parser.add_argument('--e', type=int, default=50)

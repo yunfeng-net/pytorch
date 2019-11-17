@@ -52,7 +52,6 @@ class YoloLoss(nn.Module):
         self.l_noobj = l_noobj
         self.use_gpu = use_gpu
         self.kind_loss = nn.CrossEntropyLoss()
-        self.blief_loss = nn.BCEWithLogitsLoss()
 
     def encode(self,labels):
         '''
@@ -72,7 +71,7 @@ class YoloLoss(nn.Module):
                 ij = (cxcy_sample/cell_size).ceil()-1 #
                 for k in range(self.B):
                     target[j,int(ij[1]),int(ij[0]),4+self.S*k] = 1
-                target[j,int(ij[1]),int(ij[0]),10] = int(data[i,4])
+                target[j,int(ij[1]),int(ij[0]),self.B*5] = int(data[i,4])
                 xy = ij*cell_size 
                 delta_xy = (cxcy_sample -xy)/cell_size
                 for k in range(self.B):
@@ -88,82 +87,29 @@ class YoloLoss(nn.Module):
         :return: total loss
         """
         n_elements = self.B * 5 + self.C
-        target = self.encode(target) # Tensor [batch,SxSx(Bx5+20)]
+        target = self.encode(target) # Tensor [batch,SxSx(Bx5+C)]
 
         batch = target.size(0)
         target = target.view(batch,-1,n_elements)
         prediction = prediction.view(batch,-1,n_elements)
-        coord_mask = target[:,:,4] > 0
-        noobj_mask = target[:,:,4] == 0
-        coord_mask = coord_mask.unsqueeze(-1).expand_as(target)
-        noobj_mask = noobj_mask.unsqueeze(-1).expand_as(target)
 
-
-        coord_pred = prediction[coord_mask].view(-1,n_elements)
-        class_pred = coord_pred[:,self.B*5:]
-        box_pred = coord_pred[:,:self.B*5].contiguous().view(-1,5)
-        noobj_pred = prediction[noobj_mask].view(-1,n_elements)
-
-        coord_target = target[coord_mask].view(-1,n_elements)
-        class_target = coord_target[:,self.B*5]
-        box_target = coord_target[:,:self.B*5].contiguous().view(-1,5)
-        noobj_target = target[noobj_mask].view(-1,n_elements)
-
-        # compute loss which do not contain objects
-        noobj_target_mask = torch.zeros(noobj_target.size(),dtype=torch.bool)
-
-        if self.use_gpu:
-            noobj_target_mask.to(torch.device('cuda')) 
-        #else:
-        #    noobj_target_mask = torch.ByteTensor(noobj_target.size())
-        for i in range(self.B):
-            noobj_target_mask[:,i*5+4] = True
-        noobj_target_c = noobj_target[noobj_target_mask] # only compute loss of c size [2*B*noobj_target.size(0)]
-        noobj_pred_c = noobj_pred[noobj_target_mask]
-        noobj_loss = F.mse_loss(noobj_pred_c, noobj_target_c, size_average=False)
-
-        # compute loss which contain objects
-        if self.use_gpu:
-            coord_response_mask = torch.cuda.ByteTensor(box_target.size())
-            coord_not_response_mask = torch.cuda.ByteTensor(box_target.size())
-        else:
-            coord_response_mask = torch.ByteTensor(box_target.size())
-            coord_not_response_mask = torch.ByteTensor(box_target.size())
-        coord_response_mask.zero_()
-        coord_not_response_mask = ~coord_not_response_mask.zero_()
-        for i in range(0,box_target.size()[0],self.B):
-            box1 = box_pred[i:i+self.B]
-            box2 = box_target[i:i+self.B]
-            iou = jaccard(point_form(box1[:, :4]), point_form(box2[:, :4]))
-            max_iou, max_index = iou.max(0)
-            if self.use_gpu:
-                max_index = max_index.data.cuda()
-            else:
-                max_index = max_index.data
-            coord_response_mask[i+max_index]=1
-            coord_not_response_mask[i+max_index]=0
-
-        # 1. response loss
-        box_pred_response = box_pred[coord_response_mask].view(-1, 5)
-        box_target_response = box_target[coord_response_mask].view(-1, 5)
-        #contain_loss = F.mse_loss(box_pred_response[:, 4], box_target_response[:, 4], size_average=False)
-        contain_loss = self.blief_loss(box_pred_response[:, 4], box_target_response[:, 4])
-        loc_loss = F.mse_loss(box_pred_response[:, :2], box_target_response[:, :2]) +\
-                   F.mse_loss(box_pred_response[:, 2:4], box_target_response[:, 2:4])
-        # 2. not response loss
-        box_pred_not_response = box_pred[coord_not_response_mask].view(-1, 5)
-        box_target_not_response = box_target[coord_not_response_mask].view(-1, 5)
-        box_target_not_response[:,4]= 0
-        #not_contain_loss = F.mse_loss(box_pred_not_response[:,4], box_target_not_response[:,4],size_average=False)
-        #not_contain_loss = self.blief_loss(box_pred_not_response[:, 4], box_target_not_response[:, 4])
-        # compute class prediction loss
-        #class_loss = F.mse_loss(class_pred, class_target, size_average=False)
+        # compute class loss
+        mask = prediction.view(-1,n_elements)
+        class_pred = mask[:,self.B*5:]
+        mask2 = target.view(-1,n_elements)
+        class_target = mask2[:,self.B*5]
         class_loss = self.kind_loss(class_pred, class_target.long())
 
-        # compute total loss
-        total_loss = self.l_coord * loc_loss + contain_loss + self.l_noobj * noobj_loss + class_loss
-        #return total_loss
-        return class_loss+contain_loss+self.l_coord * loc_loss #+not_contain_loss
+        # compute location loss
+        coord_mask = target[:,:,self.B*5] > 0
+        coord_pred = prediction[coord_mask].view(-1,n_elements)
+        box_pred = coord_pred[:,:self.B*5].contiguous().view(-1,5)
+        coord_target = target[coord_mask].view(-1,n_elements)
+        box_target = coord_target[:,:self.B*5].contiguous().view(-1,5)
+        loc_loss = F.mse_loss(box_pred[:, :2], box_target[:, :2]) +\
+                   F.mse_loss(box_pred[:, 2:4], box_target[:, 2:4])
+
+        return class_loss+self.l_coord * loc_loss
 
 if __name__ == "__main__":
     input = torch.randn(4, 3, 160, 160)

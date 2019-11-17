@@ -95,7 +95,7 @@ def train(vis, network,test_dataloader, train_dataloader,criterion,num_class,opt
             vis.line(all_test_miou, win='test_mIOU',opts=dict(title='test mIOU'))
         '''
         time_str, prev_time = get_time(prev_time)
-        print("epoch {}, averge train loss: {:.2f}, {}".format(epo,train_loss,time_str))
+        print("epoch {}, averge train loss: {:.4f}, {}".format(epo,train_loss,time_str))
 
         if np.mod(epo+1, 5) == 0:
             s = 'checkpoints/{}_voc_{}.pt'.format(opt.model,epo)
@@ -118,6 +118,6 @@ def train(vis, network,test_dataloader, train_dataloader,criterion,num_class,opt
                     #test_miou += miu
             time_str, prev_time = get_time(prev_time)
             test_loss /= len(test_dataloader)
-            print("saveing {}, averge test loss: {:.2f}, {}".format(s,test_loss,time_str))
+            print("saveing {}, averge test loss: {:.4f}, {}".format(s,test_loss,time_str))
 
 
