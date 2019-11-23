@@ -6,6 +6,7 @@ import torch.nn.functional as F
 from torchvision import models
 from blocks import *
 from box_utils import jaccard,point_form
+import numpy as np
 
 class YOLO(nn.Module):
 
@@ -35,6 +36,10 @@ class YOLO(nn.Module):
 
     def attr(self):
         return self.grid,self.b,self.classes
+
+    def loss(self, n_batch, l_coord, l_noobj):
+        return YoloLoss(self, n_batch, l_coord, l_noobj)
+    
 
 class YoloLoss(nn.Module):
     def __init__(self, yolo, n_batch, l_coord, l_noobj, use_gpu=True):
@@ -76,7 +81,7 @@ class YoloLoss(nn.Module):
                 delta_xy = (cxcy_sample -xy)/cell_size
                 for k in range(self.B):
                     s = self.S*k
-                    target[j,int(ij[1]),int(ij[0]),s+2:s+4] = wh[i]*grid_num
+                    target[j,int(ij[1]),int(ij[0]),s+2:s+4] = wh[i]
                     target[j,int(ij[1]),int(ij[0]),s:s+2] = delta_xy
         return target
     
@@ -110,6 +115,63 @@ class YoloLoss(nn.Module):
                    F.mse_loss(box_pred[:, 2:4], box_target[:, 2:4])
 
         return class_loss+self.l_coord * loc_loss
+
+    def post_process(self, prediction, target):
+        """ prediction: [batch, -1, self.B * 5 + self.C ]
+            target: [ [x,y,x2,y2,class] ]
+            return [tp, fp, confidence, class]
+
+            confidence = prob(class)*iou(bbox)
+            tp = class==given and iou(bbox)>0.5 and max confidence
+            fp = ~tp
+        """
+
+        n_elements = self.B * 5 + self.C
+        batch = prediction.size(0)
+        prediction = prediction.view(batch,-1,n_elements)
+        #print(prediction.shape)
+        pred = prediction[:,:,self.B*5:]
+        output = torch.softmax(pred,2) 
+        output_np = output.cpu().detach().numpy().copy()
+        kind = np.argmax(output_np, axis=2) # class
+        confidence = np.max(output_np, axis=2) # prob(class)
+        gt = np.zeros(kind.shape)
+        #order = np.argsort(confidence)
+        bbox = prediction[:,:,:self.B*5]
+        num = 0
+        for i,bbs in enumerate(target): # batch
+            num += len(bbs)
+            for bb in bbs: # each box
+                a = None
+                #print(kind[i,:],bb)
+                x = []
+                for j,k in enumerate(kind[i,:]):
+                    if k==int(bb[4]):
+                        if a is None:
+                            a = bbox[i,j,:4].cpu().detach().numpy().copy()
+                            a = np.expand_dims(a,0)
+                        else:
+                            a = np.vstack((a,np.expand_dims(bbox[i,j,:4].cpu().detach().numpy().copy(),0)))
+                        x.append(j)
+                if a is not None:
+                    a = np.hstack((a[:,:2] - a[:,2:]/2, a[:, :2] + a[:, 2:]/2))
+                    #print(a) #, bbox[i,:,:][mask])
+                    b = torch.Tensor(bb[:4])
+                    gt_bbox = torch.unsqueeze(b,0)
+                    #print(gt_bbox)
+                    a = jaccard(torch.from_numpy(a), gt_bbox)
+                    #print(a)
+                    f = 0.5
+                    j = -1
+                    for k,d in enumerate(x):
+                        if a[k,0]>f:
+                            j = d
+                            f = a[k,0]
+                    if j>=0:
+                        gt[i,j] = 1
+        shape = (confidence.shape[0]*confidence.shape[1])
+        return [np.reshape(confidence,shape),np.reshape(gt,shape),np.reshape(kind,shape),num]
+
 
 if __name__ == "__main__":
     input = torch.randn(4, 3, 160, 160)

@@ -18,13 +18,13 @@ opt = parser.parse_args()
 if __name__ == "__main__":
     
 
-    from voc import test_dataloader, train_dataloader,num_class,batch_size
+    from voc import test_dataloader, train_dataloader,num_class,batch_size,compute_ap
     if opt.load:
         model = torch.load(opt.load)
     elif opt.model=='YOLO':
-        from YOLO import YOLO,YoloLoss
+        from YOLO import YOLO
         model = YOLO(num_class,1)
-        loss = YoloLoss(model, batch_size,5,0.5)
+        loss = model.loss(batch_size,5,0.5)
     else:
         print("the model name is wrong {}".format(opt.model))
         exit(-1)
@@ -34,4 +34,4 @@ if __name__ == "__main__":
         vis = None
         if opt.visdom:
             vis = visdom.Visdom()
-        train(vis, model,test_dataloader, train_dataloader,loss,num_class,opt)
+        train(vis, model,test_dataloader, train_dataloader, loss, compute_ap, num_class, opt)

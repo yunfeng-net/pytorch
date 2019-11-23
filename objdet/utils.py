@@ -6,6 +6,47 @@ import torch.optim as optim
 import visdom
 from datetime import datetime
 
+def measure(results, compute_ap, classes):
+    # input: [confidence,gt,kind]
+    # return: mAP
+    
+    for i in range(1,classes):
+        data = None
+        tp = None
+        ap = 0
+        num = 0
+        for result in results:
+            mask = result[2]==i
+            #print(result[0].shape,result[0][mask].shape)
+            d = result[0][mask]
+            d = np.expand_dims(d,-1)
+            e = result[1][mask]
+            e = np.expand_dims(e,-1)
+            num += result[3]
+            #print(d.shape)
+            if data is None:
+                data = d
+                tp = e
+            else:
+                data = np.vstack((data,d))
+                #print(tp.shape,e.shape)
+                tp = np.vstack((tp,e))
+                #print(tp.shape)
+        index = np.argsort(-data,0)
+        #print(index.shape,data.shape,gt.shape,index[0:10],gt[:100])
+        tp = np.squeeze(tp[index],-1)
+        fp = np.ones(tp.shape)
+        fp = fp-tp
+        fp = np.cumsum(fp)
+        tp = np.cumsum(tp)
+        recall = tp / float(num)
+        # avoid divide by zero in case the first detection matches a difficult
+        # ground truth
+        prec = tp / np.maximum(tp + fp, np.finfo(np.float64).eps)
+        ap += compute_ap(prec,recall)
+
+    return ap/(classes-1)
+
 def compute(input, label, model, criterion, optimizer=None):
     if optimizer:
         optimizer.zero_grad()
@@ -17,16 +58,6 @@ def compute(input, label, model, criterion, optimizer=None):
         optimizer.step()
     return loss.item(),output
 
-def measure(output,label,num_class):
-    output = torch.softmax(output,1) 
-
-    output_np = output.cpu().detach().numpy().copy()
-    output_np = np.argmax(output_np, axis=1)
-    label = label.cpu().detach().numpy().copy()
-    pa = pixel_acc(output_np,label)
-    miu = iou(output_np,label,num_class)
-    return output_np,label,pa,miu
-
 def get_time(prev_time):
     cur_time = datetime.now() # FPS
     t = (cur_time - prev_time).seconds
@@ -35,9 +66,7 @@ def get_time(prev_time):
     time_str = "Time %02d:%02d:%02d" % (h, m, s)
     return time_str, cur_time
 
-def train(vis, network,test_dataloader, train_dataloader,criterion,num_class,opt):
-    #from VOC import set_uni_size
-
+def train(vis, network,test_dataloader, train_dataloader,criterion,ap,num_class,opt):
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -47,8 +76,6 @@ def train(vis, network,test_dataloader, train_dataloader,criterion,num_class,opt
 
     all_train_loss = []
     all_test_loss = []
-    all_test_pa = []
-    all_test_miou = []
 
     # start timing
     prev_time = datetime.now()
@@ -65,7 +92,6 @@ def train(vis, network,test_dataloader, train_dataloader,criterion,num_class,opt
 
             iter_loss, _ = compute(sample, label,network,criterion, optimizer)
             train_loss += iter_loss
-
             #if np.mod(index, 100) == 0:
             #    print('epoch {}, {}/{},train loss is {}'.format(epo, index, len(train_dataloader), iter_loss))
         train_loss /= len(train_dataloader)
@@ -97,27 +123,23 @@ def train(vis, network,test_dataloader, train_dataloader,criterion,num_class,opt
         time_str, prev_time = get_time(prev_time)
         print("epoch {}, averge train loss: {:.4f}, {}".format(epo,train_loss,time_str))
 
-        if np.mod(epo+1, 5) == 0:
+        if np.mod(epo+1, 1) == 0:
             s = 'checkpoints/{}_voc_{}.pt'.format(opt.model,epo)
             torch.save(network, s)
             #print('saveing {}'.format(s))
-
+            result_list = []
             test_loss = 0
             network.eval()
             with torch.no_grad():
                 for index, (sample, label) in enumerate(test_dataloader):
 
                     sample = sample.to(device)
-                    #label = label.to(device)
+                    output = network(sample)
+                    result = criterion.post_process(output, label)
+            result_list.append(result)
+            score = measure(result_list, ap, num_class)
 
-                    iter_loss, output = compute(sample, label,network,criterion)
-                    test_loss += iter_loss
-                    
-                    #output_np,label_np, = measure(output,label,num_class)
-
-                    #test_miou += miu
             time_str, prev_time = get_time(prev_time)
-            test_loss /= len(test_dataloader)
-            print("saveing {}, averge test loss: {:.4f}, {}".format(s,test_loss,time_str))
+            print("saveing {}, mAP: {:.4f}, {}".format(s,score,time_str))
 
 
