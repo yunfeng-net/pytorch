@@ -417,7 +417,7 @@ class SSDAugmentation(object):
         return self.augment(img, boxes, labels)
 
 class SSDAugmentationTest(object):
-    def __init__(self, size=300, mean=(0, 0, 0)):
+    def __init__(self, size=300, mean=(104, 117, 123)):
         self.mean = mean
         self.size = size
         self.augment = Compose([

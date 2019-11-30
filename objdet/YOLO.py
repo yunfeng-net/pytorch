@@ -128,9 +128,11 @@ class YoloLoss(nn.Module):
 
         n_elements = self.B * 5 + self.C
         batch = prediction.size(0)
+        cell_size = 1./self.S
         prediction = prediction.view(batch,-1,n_elements)
-        #print(prediction.shape)
+        #print("begin ", prediction.shape, target[0])
         pred = prediction[:,:,self.B*5:]
+        #print(prediction[0,:,:4])
         output = torch.softmax(pred,2) 
         output_np = output.cpu().detach().numpy().copy()
         kind = np.argmax(output_np, axis=2) # class
@@ -138,20 +140,25 @@ class YoloLoss(nn.Module):
         gt = np.zeros(kind.shape)
         #order = np.argsort(confidence)
         bbox = prediction[:,:,:self.B*5]
-        num = 0
+        num = np.zeros(self.C)
+        gt_num = 0
         for i,bbs in enumerate(target): # batch
-            num += len(bbs)
             for bb in bbs: # each box
+                num[int(bb[4])] += 1
                 a = None
                 #print(kind[i,:],bb)
                 x = []
                 for j,k in enumerate(kind[i,:]):
                     if k==int(bb[4]):
+                        b = bbox[i,j,:4].cpu().detach().numpy().copy()
+                        b[:2] += [int(j)/self.S,int(j)%self.S]
+                        b[:2] *= cell_size
+                        #print(b)
+                        b = np.expand_dims(b,0)
                         if a is None:
-                            a = bbox[i,j,:4].cpu().detach().numpy().copy()
-                            a = np.expand_dims(a,0)
+                            a = b
                         else:
-                            a = np.vstack((a,np.expand_dims(bbox[i,j,:4].cpu().detach().numpy().copy(),0)))
+                            a = np.vstack((a,b))
                         x.append(j)
                 if a is not None:
                     a = np.hstack((a[:,:2] - a[:,2:]/2, a[:, :2] + a[:, 2:]/2))
@@ -160,7 +167,6 @@ class YoloLoss(nn.Module):
                     gt_bbox = torch.unsqueeze(b,0)
                     #print(gt_bbox)
                     a = jaccard(torch.from_numpy(a), gt_bbox)
-                    #print(a)
                     f = 0.5
                     j = -1
                     for k,d in enumerate(x):
@@ -169,6 +175,12 @@ class YoloLoss(nn.Module):
                             f = a[k,0]
                     if j>=0:
                         gt[i,j] = 1
+                        gt_num += 1
+                        #print("kind :", int(bb[4]),i,j)
+                        
+        #print(gt_num,num)
+        #if gt_num==0:
+        #    return None
         shape = (confidence.shape[0]*confidence.shape[1])
         return [np.reshape(confidence,shape),np.reshape(gt,shape),np.reshape(kind,shape),num]
 
